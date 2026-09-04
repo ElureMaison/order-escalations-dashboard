@@ -75,6 +75,7 @@
   }
 
   *{ box-sizing:border-box; }
+  [hidden]{ display:none !important; }
   body{ background:var(--page); color:var(--text-primary); font:14px/1.45 system-ui,-apple-system,"Segoe UI",sans-serif; }
   .wrap{ max-width:1200px; margin:0 auto; padding:28px 20px 64px; }
 
@@ -129,6 +130,8 @@
   .insight-card{ margin-bottom:16px; }
   .insight-list{ list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:9px; }
   .insight-list li{ display:flex; align-items:flex-start; gap:10px; font-size:13px; color:var(--text-primary); line-height:1.5; }
+  .insight-list li.insight-headline{ font-weight:600; }
+  .insight-list li.insight-divider{ height:1px; background:var(--gridline); margin:2px 0; padding:0; list-style:none; }
   .sev{
     flex:none; margin-top:1px; font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:.03em;
     padding:2px 7px; border-radius:99px; border:1px solid transparent; white-space:nowrap;
@@ -201,12 +204,18 @@
   td.status{ color:var(--text-primary); max-width:340px; }
   td.email{ color:var(--text-secondary); white-space:nowrap; }
   td.product{ color:var(--text-secondary); white-space:nowrap; }
+  td.product.clickable{ cursor:pointer; }
+  td.product.clickable:hover{ color:var(--cat-oos); text-decoration:underline; }
   .badge{
     display:inline-flex; align-items:center; gap:5px; font-size:10.5px; padding:3px 7px;
     border-radius:99px; white-space:nowrap; color:var(--text-primary); background:var(--surface-2);
     border:1px solid var(--border);
   }
   .badge .dot{ width:6px; height:6px; border-radius:50%; flex:none; }
+  .badge.clickable{ cursor:pointer; }
+  .badge.clickable:hover{ border-color:var(--ring); }
+  .cell-active{ box-shadow:0 0 0 1px var(--ring) inset; font-weight:650; }
+  td.product.cell-active{ color:var(--cat-oos); font-weight:650; }
 
   footer{ margin-top:24px; color:var(--text-muted); font-size:11.5px; }
 
@@ -222,13 +231,13 @@
     flex:1; min-width:0; background:var(--surface-1); border:1px solid var(--border); border-radius:8px;
     padding:10px 12px; color:var(--text-primary); font-size:14px; text-align:center;
   }
-  .gate-pw-row button{
-    flex:none; background:var(--surface-1); border:1px solid var(--border); border-radius:8px;
-    padding:0 12px; color:var(--text-secondary); font-size:12px; cursor:pointer; font-family:inherit;
-  }
   .gate-box button{
     width:100%; background:var(--cat-oos); border:none; border-radius:8px; padding:10px 12px;
     color:#fff; font-size:13px; font-weight:650; cursor:pointer; font-family:inherit;
+  }
+  .gate-box .gate-pw-row button#gateShow{
+    width:auto; flex:none; background:var(--surface-1); border:1px solid var(--border);
+    padding:0 12px; color:var(--text-secondary); font-size:12px; font-weight:600;
   }
   .gate-box .gate-err{ color:var(--status-critical); font-size:12px; margin-top:10px; }
 </style>
@@ -682,21 +691,36 @@
       const tdName = document.createElement('td'); tdName.textContent = r.name;
       const tdEmail = document.createElement('td'); tdEmail.className='email'; tdEmail.textContent = r.email;
       const tdProduct = document.createElement('td'); tdProduct.className='product'; tdProduct.textContent = r.product || '—';
+      if (r.product){
+        tdProduct.classList.add('clickable');
+        if (state.product === r.product) tdProduct.classList.add('cell-active');
+        tdProduct.title = 'Filter to this product';
+        tdProduct.addEventListener('click', () => toggleFilter('product', r.product));
+      }
       const tdCat = document.createElement('td');
-      const catBadge = document.createElement('span'); catBadge.className = 'badge';
+      const catBadge = document.createElement('span'); catBadge.className = 'badge clickable';
+      if (state.category === r.category) catBadge.classList.add('cell-active');
+      catBadge.title = 'Filter to this category';
       const catDot = document.createElement('span'); catDot.className = 'dot'; catDot.style.background = colorFor(CAT_COLOR, r.category);
       const catLabel = document.createElement('span'); catLabel.textContent = shortCat(r.category);
       catBadge.append(catDot, catLabel); tdCat.appendChild(catBadge);
+      catBadge.addEventListener('click', () => toggleFilter('category', r.category));
       const tdSup = document.createElement('td');
-      const supBadge = document.createElement('span'); supBadge.className = 'badge';
+      const supBadge = document.createElement('span'); supBadge.className = 'badge clickable';
+      if (state.store === r.supplier) supBadge.classList.add('cell-active');
+      supBadge.title = 'Filter to this store';
       const supDot = document.createElement('span'); supDot.className = 'dot'; supDot.style.background = colorFor(SUP_COLOR, r.supplier);
       const supLabel = document.createElement('span'); supLabel.textContent = r.supplier;
       supBadge.append(supDot, supLabel); tdSup.appendChild(supBadge);
+      supBadge.addEventListener('click', () => toggleFilter('store', r.supplier));
       const tdRes = document.createElement('td');
-      const resBadge = document.createElement('span'); resBadge.className = 'badge';
+      const resBadge = document.createElement('span'); resBadge.className = 'badge clickable';
+      if (state.resolution === r.resolution) resBadge.classList.add('cell-active');
+      resBadge.title = 'Filter to this resolution';
       const resDot = document.createElement('span'); resDot.className = 'dot'; resDot.style.background = colorFor(RES_COLOR, r.resolution);
       const resLabel = document.createElement('span'); resLabel.textContent = shortRes(r.resolution);
       resBadge.append(resDot, resLabel); tdRes.appendChild(resBadge);
+      resBadge.addEventListener('click', () => toggleFilter('resolution', r.resolution));
       const tdStatus = document.createElement('td'); tdStatus.className='status';
       tdStatus.textContent = r.note ? `${r.status} — ${r.note}` : r.status;
       tr.append(tdOrder, tdDate, tdName, tdEmail, tdProduct, tdCat, tdSup, tdRes, tdStatus);
@@ -708,50 +732,102 @@
   }
 
   // ---- insights engine ----
+  function mostCommon(arr){
+    const m = new Map(); let best = null, bestN = 0;
+    for (const v of arr){ const n = (m.get(v)||0)+1; m.set(v,n); if (n > bestN){ bestN = n; best = v; } }
+    return best;
+  }
+  function topByProduct(rows){
+    const m = new Map();
+    for (const r of rows){ if (r.product) m.set(r.product, (m.get(r.product)||0)+1); }
+    return Array.from(m.entries()).sort((a,b)=>b[1]-a[1]);
+  }
+
   function renderInsights(rows, ctx){
     const list = document.getElementById('insightList');
     list.innerHTML = '';
-    const { total, catCounts, resCounts, supCounts, prodCounts, monthEntries, emailCounts, repeatCustomers } = ctx;
-    const items = [];
+    const { total, catCounts, resCounts, supCounts, monthEntries, emailCounts, repeatCustomers } = ctx;
+    const headline = [];   // always-on facts, shown first regardless of severity
+    const items = [];      // conditional alerts, severity-sorted
 
     if (!total){
       items.push({ sev:'note', text:'No orders match the current filters — widen the filter to see insights.' });
-      renderInsightItems(list, items);
+      renderInsightItems(list, headline, items);
       return;
     }
 
-    const oos = catCounts.get('Out of stock / product unavailable') || 0;
-    const oosPct = Math.round(oos/total*100);
-    if (oosPct >= 30){
-      items.push({ sev: oosPct >= 50 ? 'critical' : 'warning',
-        text: `${oosPct}% of flagged orders (${oos.toLocaleString()} of ${total.toLocaleString()}) are stuck on stock unavailability — inventory forecasting is the single biggest driver of complaints here.` });
-    }
-
-    if (monthEntries.length >= 2){
-      const [prevKey, prevVal] = monthEntries[monthEntries.length-2];
+    // 1) latest trend — always shown. Detect a still-in-progress latest month from the
+    // data itself (max day-of-month covered), not the viewer's real-world clock, since
+    // the sheet's dates aren't tied to when the page happens to be opened.
+    if (monthEntries.length){
       const [lastKey, lastVal] = monthEntries[monthEntries.length-1];
-      if (prevVal > 0 && lastVal >= prevVal * 1.8 && lastVal >= 8){
-        const growth = Math.round((lastVal/prevVal - 1) * 100);
-        items.push({ sev:'critical',
-          text: `Escalations jumped ${growth}% from ${monthLabel(prevKey)} (${prevVal}) to ${monthLabel(lastKey)} (${lastVal}) — find out what changed that month before it repeats.` });
+      const [ly, lm] = lastKey.split('-').map(Number);
+      const daysInLastMonth = new Date(ly, lm, 0).getDate();
+      const lastMonthDays = rows.filter(r => r.date && r.date.slice(0,7) === lastKey).map(r => parseInt(r.date.slice(8,10), 10));
+      const maxDayInData = lastMonthDays.length ? Math.max(...lastMonthDays) : 0;
+      const isPartial = maxDayInData > 0 && maxDayInData < daysInLastMonth - 2;
+
+      if (monthEntries.length >= 2){
+        const [prevKey, prevVal] = monthEntries[monthEntries.length-2];
+        if (isPartial){
+          const projected = Math.round(lastVal / maxDayInData * daysInLastMonth);
+          headline.push({ sev:'note', text: `Latest trend: ${monthLabel(lastKey)} is still in progress — data runs through day ${maxDayInData} of ${daysInLastMonth} (${lastVal.toLocaleString()} logged so far, ≈${projected.toLocaleString()} projected for the full month at this pace), vs ${prevVal.toLocaleString()} for all of ${monthLabel(prevKey)}.` });
+        } else if (prevVal > 0){
+          const growth = Math.round((lastVal/prevVal - 1) * 100);
+          let sev = 'note', verb = growth === 0 ? 'flat versus' : (growth > 0 ? `up ${growth}% from` : `down ${Math.abs(growth)}% from`);
+          if (growth >= 80 && lastVal >= 8) sev = 'critical';
+          else if (growth >= 35 && lastVal >= 8) sev = 'warning';
+          else if (growth <= -35 && prevVal >= 8) sev = 'good';
+          headline.push({ sev, text: `Latest trend: ${monthLabel(lastKey)} logged ${lastVal.toLocaleString()} escalations, ${verb} ${monthLabel(prevKey)} (${prevVal.toLocaleString()}).` });
+        }
+      } else {
+        headline.push({ sev:'note', text: `Latest trend: all ${lastVal.toLocaleString()} orders in this view fall in ${monthLabel(lastKey)} — not enough history yet for a month-over-month comparison.` });
       }
     }
+
+    // 2) most unfulfilled (supplier-backlog) product, by name
+    const backlogRows = rows.filter(r => r.category === 'Unfulfilled - awaiting CJ' || r.category === 'Unfulfilled - awaiting WIIO');
+    const backlogTop = topByProduct(backlogRows);
+    if (backlogTop.length){
+      const [pname, pn] = backlogTop[0];
+      const pRows = backlogRows.filter(r => r.product === pname);
+      const cjN = pRows.filter(r => r.category === 'Unfulfilled - awaiting CJ').length;
+      const wiioN = pRows.filter(r => r.category === 'Unfulfilled - awaiting WIIO').length;
+      const store = cjN >= wiioN ? `CJ (${cjN})` : `WIIO (${wiioN})`;
+      const pct = Math.round(pn/backlogRows.length*100);
+      headline.push({ sev: pct >= 20 ? 'warning' : 'note',
+        text: `Most-unfulfilled product: "${pname}" — ${pn.toLocaleString()} orders stuck unfulfilled (${pct}% of all ${backlogRows.length.toLocaleString()} supplier-backlog cases), mostly waiting on ${store}.` });
+    }
+
+    // 3) out of stock, broken out per store
+    const oosRows = rows.filter(r => r.category === 'Out of stock / product unavailable');
+    const oos = oosRows.length;
+    if (oos){
+      const cjOos = oosRows.filter(r => r.supplier === 'CJ').length;
+      const wiioOos = oosRows.filter(r => r.supplier === 'WIIO').length;
+      const unspecOos = oos - cjOos - wiioOos;
+      const oosPct = Math.round(oos/total*100);
+      let text = `Out of stock: ${oos.toLocaleString()} orders (${oosPct}% of view). By store: ${cjOos.toLocaleString()} name CJ, ${wiioOos.toLocaleString()} name WIIO`;
+      text += unspecOos > 0 ? `, and ${unspecOos.toLocaleString()} (${Math.round(unspecOos/oos*100)}%) don't specify a store in the note — so most OOS cases can't be pinned on one supplier from this log.` : '.';
+      headline.push({ sev: oosPct >= 50 ? 'critical' : (oosPct >= 30 ? 'warning' : 'note'), text });
+    }
+
+    // 4) top OOS product, with a concrete example reason pulled from the sheet
+    const oosTop = topByProduct(oosRows);
+    if (oosTop.length){
+      const [pname, pn] = oosTop[0];
+      const pct = Math.round(pn/oos*100);
+      const example = mostCommon(oosRows.filter(r => r.product === pname).map(r => r.status));
+      headline.push({ sev: pct >= 20 ? 'critical' : (pct >= 10 ? 'warning' : 'note'),
+        text: `Most out-of-stock product: "${pname}" — ${pn.toLocaleString()} OOS orders (${pct}% of all OOS). Typical reason logged: "${example}"` });
+    }
+
     if (monthEntries.length){
       let peak = monthEntries[0];
       for (const e of monthEntries) if (e[1] > peak[1]) peak = e;
       const pct = Math.round(peak[1]/total*100);
       if (pct >= 45){
         items.push({ sev:'warning', text: `${monthLabel(peak[0])} alone accounts for ${pct}% of everything in this view (${peak[1].toLocaleString()} of ${total.toLocaleString()}) — a single month is driving the whole picture.` });
-      }
-    }
-
-    const topProducts = Array.from(prodCounts.entries()).sort((a,b)=>b[1]-a[1]);
-    if (topProducts.length){
-      const [topName, topN] = topProducts[0];
-      const pct = Math.round(topN/total*100);
-      if (pct >= 8){
-        items.push({ sev: pct >= 15 ? 'critical' : 'warning',
-          text: `"${topName}" is the single biggest source of complaints — ${topN.toLocaleString()} orders (${pct}%). Confirm stock and lead time before promoting it further.` });
       }
     }
 
@@ -791,23 +867,30 @@
       items.push({ sev:'note', text: `${unspecPct}% of rows don't name a fulfillment supplier in the status/note — tightening that logging habit would make CJ-vs-WIIO comparisons more reliable.` });
     }
 
-    if (!items.length){
+    if (!headline.length && !items.length){
       items.push({ sev:'good', text: 'No major red flags in the current view — issue volume and root causes look reasonably distributed rather than concentrated in one place.' });
     }
 
     items.sort((a,b) => { const order = {critical:0, warning:1, good:2, note:3}; return order[a.sev]-order[b.sev]; });
-    renderInsightItems(list, items);
+    renderInsightItems(list, headline, items);
   }
 
-  function renderInsightItems(list, items){
+  function renderInsightItems(list, headline, items){
     const SEV_LABEL = { critical:'Critical', warning:'Watch', good:'Good', note:'Note' };
-    for (const it of items){
+    function addLi(it, isHeadline){
       const li = document.createElement('li');
+      if (isHeadline) li.classList.add('insight-headline');
       const badge = document.createElement('span'); badge.className = `sev sev-${it.sev}`; badge.textContent = SEV_LABEL[it.sev];
       const txt = document.createElement('span'); txt.textContent = it.text;
       li.append(badge, txt);
       list.appendChild(li);
     }
+    for (const it of headline) addLi(it, true);
+    if (headline.length && items.length){
+      const divider = document.createElement('li'); divider.className = 'insight-divider';
+      list.appendChild(divider);
+    }
+    for (const it of items) addLi(it, false);
   }
 
   // ---- filter controls ----
