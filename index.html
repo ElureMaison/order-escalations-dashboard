@@ -797,11 +797,37 @@
     for (const r of rows){ if (r.product) m.set(r.product, (m.get(r.product)||0)+1); }
     return Array.from(m.entries()).sort((a,b)=>b[1]-a[1]);
   }
+  const GRAN_NOUN = { week:'week', month:'month', quarter:'quarter', year:'year' };
+  const GRAN_SLACK = { week:0, month:2, quarter:5, year:10 };
+  // Days spanned by a period bucket, and how many of those days the data actually
+  // covers — used to detect a still-in-progress latest period from the sheet's own
+  // dates, not the viewer's real-world clock.
+  function periodDayInfo(rowsInBucket, key, gran){
+    let startMs, endMs;
+    if (gran === 'year'){
+      const y = parseInt(key, 10);
+      startMs = Date.UTC(y, 0, 1); endMs = Date.UTC(y, 11, 31);
+    } else if (gran === 'quarter'){
+      const [y, q] = key.split('-Q').map(Number);
+      startMs = Date.UTC(y, (q-1)*3, 1); endMs = Date.UTC(y, q*3, 0);
+    } else if (gran === 'month'){
+      const [y, m] = key.split('-').map(Number);
+      startMs = Date.UTC(y, m-1, 1); endMs = Date.UTC(y, m, 0);
+    } else {
+      startMs = new Date(key + 'T00:00:00Z').getTime();
+      endMs = startMs + 6*86400000;
+    }
+    const daysInPeriod = Math.round((endMs - startMs) / 86400000) + 1;
+    let maxMs = -Infinity;
+    for (const r of rowsInBucket){ if (r.date){ const t = new Date(r.date + 'T00:00:00Z').getTime(); if (t > maxMs) maxMs = t; } }
+    const daysCovered = maxMs === -Infinity ? 0 : Math.round((maxMs - startMs) / 86400000) + 1;
+    return { daysInPeriod, daysCovered };
+  }
 
   function renderInsights(rows, ctx){
     const list = document.getElementById('insightList');
     list.innerHTML = '';
-    const { total, catCounts, resCounts, supCounts, storeCounts, monthEntries, emailCounts, repeatCustomers } = ctx;
+    const { total, catCounts, resCounts, supCounts, storeCounts, emailCounts, repeatCustomers } = ctx;
     const headline = [];   // always-on facts, shown first regardless of severity
     const items = [];      // conditional alerts, severity-sorted
 
@@ -811,32 +837,41 @@
       return;
     }
 
-    // 1) latest trend — always shown. Detect a still-in-progress latest month from the
-    // data itself (max day-of-month covered), not the viewer's real-world clock, since
-    // the sheet's dates aren't tied to when the page happens to be opened.
-    if (monthEntries.length){
-      const [lastKey, lastVal] = monthEntries[monthEntries.length-1];
-      const [ly, lm] = lastKey.split('-').map(Number);
-      const daysInLastMonth = new Date(ly, lm, 0).getDate();
-      const lastMonthDays = rows.filter(r => r.date && r.date.slice(0,7) === lastKey).map(r => parseInt(r.date.slice(8,10), 10));
-      const maxDayInData = lastMonthDays.length ? Math.max(...lastMonthDays) : 0;
-      const isPartial = maxDayInData > 0 && maxDayInData < daysInLastMonth - 2;
+    // Bucket by whatever granularity the Week/Month/Quarter/Year toggle is set to
+    // (defaulting to month when "All time" is selected), so the trend read matches
+    // whatever period the reader is currently looking at.
+    const effGran = state.gran === 'all' ? 'month' : state.gran;
+    const periodNoun = GRAN_NOUN[effGran];
+    const periodTotals = new Map();
+    for (const r of rows){ if (r.date){ const k = bucketKey(r.date, effGran); periodTotals.set(k, (periodTotals.get(k)||0)+1); } }
+    const periodEntries = Array.from(periodTotals.entries()).sort((a,b)=> a[0] < b[0] ? -1 : 1);
 
-      if (monthEntries.length >= 2){
-        const [prevKey, prevVal] = monthEntries[monthEntries.length-2];
+    // 1) latest trend — always shown. Detect a still-in-progress latest period from the
+    // data itself (days actually covered vs days in the period), not the viewer's
+    // real-world clock, since the sheet's dates aren't tied to when the page is opened.
+    if (periodEntries.length){
+      const [lastKey, lastVal] = periodEntries[periodEntries.length-1];
+      const lastRows = rows.filter(r => r.date && bucketKey(r.date, effGran) === lastKey);
+      const { daysInPeriod, daysCovered } = periodDayInfo(lastRows, lastKey, effGran);
+      const isPartial = daysCovered > 0 && daysCovered < daysInPeriod - GRAN_SLACK[effGran];
+      const lastLabel = bucketLabel(lastKey, effGran);
+
+      if (periodEntries.length >= 2){
+        const [prevKey, prevVal] = periodEntries[periodEntries.length-2];
+        const prevLabel = bucketLabel(prevKey, effGran);
         if (isPartial){
-          const projected = Math.round(lastVal / maxDayInData * daysInLastMonth);
-          headline.push({ sev:'note', text: `Latest trend: ${monthLabel(lastKey)} is still in progress — data runs through day ${maxDayInData} of ${daysInLastMonth} (${lastVal.toLocaleString()} logged so far, ≈${projected.toLocaleString()} projected for the full month at this pace), vs ${prevVal.toLocaleString()} for all of ${monthLabel(prevKey)}.` });
+          const projected = Math.round(lastVal / daysCovered * daysInPeriod);
+          headline.push({ sev:'note', text: `Latest trend: this ${periodNoun} (${lastLabel}) is still in progress — data covers ${daysCovered} of ${daysInPeriod} days (${lastVal.toLocaleString()} logged so far, ≈${projected.toLocaleString()} projected for the full ${periodNoun} at this pace), vs ${prevVal.toLocaleString()} for all of last ${periodNoun} (${prevLabel}).` });
         } else if (prevVal > 0){
           const growth = Math.round((lastVal/prevVal - 1) * 100);
           let sev = 'note', verb = growth === 0 ? 'flat versus' : (growth > 0 ? `up ${growth}% from` : `down ${Math.abs(growth)}% from`);
           if (growth >= 80 && lastVal >= 8) sev = 'critical';
           else if (growth >= 35 && lastVal >= 8) sev = 'warning';
           else if (growth <= -35 && prevVal >= 8) sev = 'good';
-          headline.push({ sev, text: `Latest trend: ${monthLabel(lastKey)} logged ${lastVal.toLocaleString()} escalations, ${verb} ${monthLabel(prevKey)} (${prevVal.toLocaleString()}).` });
+          headline.push({ sev, text: `Latest trend: this ${periodNoun} (${lastLabel}) logged ${lastVal.toLocaleString()} escalations, ${verb} last ${periodNoun} (${prevLabel}, ${prevVal.toLocaleString()}).` });
         }
       } else {
-        headline.push({ sev:'note', text: `Latest trend: all ${lastVal.toLocaleString()} orders in this view fall in ${monthLabel(lastKey)} — not enough history yet for a month-over-month comparison.` });
+        headline.push({ sev:'note', text: `Latest trend: all ${lastVal.toLocaleString()} orders in this view fall in ${lastLabel} — not enough history yet for a ${periodNoun}-over-${periodNoun} comparison.` });
       }
     }
 
@@ -884,12 +919,12 @@
         text: `Most out-of-stock product: "${pname}" — ${pn.toLocaleString()} OOS orders (${pct}% of all OOS). Typical reason logged: "${example}"` });
     }
 
-    if (monthEntries.length){
-      let peak = monthEntries[0];
-      for (const e of monthEntries) if (e[1] > peak[1]) peak = e;
+    if (periodEntries.length > 1){
+      let peak = periodEntries[0];
+      for (const e of periodEntries) if (e[1] > peak[1]) peak = e;
       const pct = Math.round(peak[1]/total*100);
       if (pct >= 45){
-        items.push({ sev:'warning', text: `${monthLabel(peak[0])} alone accounts for ${pct}% of everything in this view (${peak[1].toLocaleString()} of ${total.toLocaleString()}) — a single month is driving the whole picture.` });
+        items.push({ sev:'warning', text: `${bucketLabel(peak[0], effGran)} alone accounts for ${pct}% of everything in this view (${peak[1].toLocaleString()} of ${total.toLocaleString()}) — a single ${periodNoun} is driving the whole picture.` });
       }
     }
 
