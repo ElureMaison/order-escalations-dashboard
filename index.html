@@ -217,9 +217,14 @@
   .gate-box{ width:100%; max-width:320px; text-align:center; }
   .gate-box .gate-title{ font-size:17px; font-weight:650; margin-bottom:4px; }
   .gate-box .gate-sub{ color:var(--text-secondary); font-size:13px; margin:0 0 16px; }
+  .gate-pw-row{ display:flex; gap:6px; margin-bottom:10px; }
   .gate-box input{
-    width:100%; background:var(--surface-1); border:1px solid var(--border); border-radius:8px;
-    padding:10px 12px; color:var(--text-primary); font-size:14px; margin-bottom:10px; text-align:center;
+    flex:1; min-width:0; background:var(--surface-1); border:1px solid var(--border); border-radius:8px;
+    padding:10px 12px; color:var(--text-primary); font-size:14px; text-align:center;
+  }
+  .gate-pw-row button{
+    flex:none; background:var(--surface-1); border:1px solid var(--border); border-radius:8px;
+    padding:0 12px; color:var(--text-secondary); font-size:12px; cursor:pointer; font-family:inherit;
   }
   .gate-box button{
     width:100%; background:var(--cat-oos); border:none; border-radius:8px; padding:10px 12px;
@@ -232,7 +237,10 @@
   <div class="gate-box">
     <div class="gate-title">Order Escalations Dashboard</div>
     <p class="gate-sub">This report contains customer data. Enter the password to continue.</p>
-    <input type="password" id="gatePw" placeholder="Password" autocomplete="off" />
+    <div class="gate-pw-row">
+      <input type="password" id="gatePw" placeholder="Password" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" />
+      <button id="gateShow" type="button" title="Show/hide password">Show</button>
+    </div>
     <button id="gateBtn" type="button">Unlock</button>
     <p class="gate-err" id="gateErr" hidden>Incorrect password — try again.</p>
   </div>
@@ -358,7 +366,14 @@
   const root = document.getElementById('dashboardRoot');
   const pwInput = document.getElementById('gatePw');
   const gateBtn = document.getElementById('gateBtn');
+  const gateShow = document.getElementById('gateShow');
   const gateErr = document.getElementById('gateErr');
+
+  gateShow.addEventListener('click', () => {
+    const showing = pwInput.type === 'text';
+    pwInput.type = showing ? 'password' : 'text';
+    gateShow.textContent = showing ? 'Show' : 'Hide';
+  });
 
   function unlock(){
     gate.hidden = true;
@@ -366,11 +381,11 @@
     try { localStorage.setItem(GATE_KEY, '1'); } catch(e){}
   }
   function tryUnlock(){
-    if (djb2(pwInput.value) === GATE_HASH){
+    if (djb2(pwInput.value.trim()) === GATE_HASH){
       unlock();
     } else {
       gateErr.hidden = false;
-      pwInput.value = '';
+      pwInput.select();
       pwInput.focus();
     }
   }
@@ -381,6 +396,7 @@
   } else {
     gateBtn.addEventListener('click', tryUnlock);
     pwInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') tryUnlock(); });
+    pwInput.addEventListener('input', () => { gateErr.hidden = true; });
     pwInput.focus();
   }
 })();
