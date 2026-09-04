@@ -122,6 +122,8 @@
     overflow:hidden; margin-bottom:16px;
   }
   .kpi{ background:var(--surface-1); padding:13px 14px; min-width:0; }
+  .kpi.clickable{ cursor:pointer; transition:background .1s ease; }
+  .kpi.clickable:hover{ background:var(--surface-2); }
   .kpi .label{ color:var(--text-secondary); font-size:11px; margin-bottom:6px; }
   .kpi .value{ font-size:21px; font-weight:650; font-variant-numeric:proportional-nums; }
   .kpi .sub{ color:var(--text-muted); font-size:10.5px; margin-top:3px; }
@@ -491,15 +493,21 @@
   function bucketTooltipLabel(key, gran){ return gran === 'week' ? `Week of ${bucketLabel(key, gran)}` : bucketLabel(key, gran); }
 
   // ---- filter state ----
-  const state = { q:'', category:'', store:'', supplier:'', resolution:'', product:'', followup:'', gran:'all', period:'' };
+  const state = { q:'', category:'', store:'', supplier:'', resolution:'', product:'', followup:'', gran:'all', period:'', refundOrCredit:false, repeatOnly:false };
+
+  function isFilterClear(){
+    return !state.q && !state.category && !state.store && !state.supplier && !state.resolution &&
+      !state.product && !state.followup && !state.period && !state.refundOrCredit && !state.repeatOnly;
+  }
 
   function applyFilters(rows){
-    return rows.filter(r => {
+    const base = rows.filter(r => {
       if (state.category && r.category !== state.category) return false;
       if (state.store && r.store !== state.store) return false;
       if (state.supplier && r.supplier !== state.supplier) return false;
       if (state.resolution && r.resolution !== state.resolution) return false;
       if (state.product && r.product !== state.product) return false;
+      if (state.refundOrCredit && r.resolution !== 'Refund requested' && r.resolution !== 'Store credit offered') return false;
       if (state.followup){
         let m = r.status.match(/(\d+)\s*[xX](?!\w)/);
         if (!m) m = r.status.match(/(\d+)\s+times/i);
@@ -514,6 +522,24 @@
       }
       return true;
     });
+    if (!state.repeatOnly) return base;
+    const emailCounts = new Map();
+    for (const r of base){ if (r.email) emailCounts.set(r.email.toLowerCase(), (emailCounts.get(r.email.toLowerCase())||0)+1); }
+    return base.filter(r => r.email && emailCounts.get(r.email.toLowerCase()) > 1);
+  }
+
+  function toggleBoolFilter(key){
+    state[key] = !state[key];
+    renderAll();
+  }
+  function clearAllFilters(){
+    state.q=''; state.category=''; state.store=''; state.supplier=''; state.resolution=''; state.product='';
+    state.followup=''; state.period=''; state.gran='all'; state.refundOrCredit=false; state.repeatOnly=false;
+    document.getElementById('search').value = '';
+    document.querySelectorAll('#granSeg button').forEach(b => b.classList.toggle('active', b.dataset.g === 'all'));
+    populatePeriodOptions();
+    syncControls();
+    renderAll();
   }
 
   function count(rows, key){
@@ -591,22 +617,31 @@
 
     // ---- KPIs ----
     const kpis = [
-      { label:"Flagged orders (in view)", value: total.toLocaleString(), sub: `of ${DATA.total.toLocaleString()} total` },
-      { label:"Out of stock", value: total ? `${Math.round(oos/total*100)}%` : '—', sub: `${oos.toLocaleString()} orders`, flag:true },
-      { label:"Awaiting CJ shipment", value: cj.toLocaleString(), sub: total ? `${Math.round(cj/total*100)}% of view` : '' },
-      { label:"Awaiting WIIO shipment", value: wiio.toLocaleString(), sub: total ? `${Math.round(wiio/total*100)}% of view` : '' },
-      { label:"Refund / credit issued", value: (refund+credit).toLocaleString(), sub: `${refund} refund · ${credit} store credit` },
-      { label:"Repeat customers", value: repeatCustomers.toLocaleString(), sub: `flagged more than once` },
+      { label:"Flagged orders (in view)", value: total.toLocaleString(), sub: `of ${DATA.total.toLocaleString()} total`,
+        active: isFilterClear(), onClick: clearAllFilters, title: 'Clear all filters' },
+      { label:"Out of stock", value: total ? `${Math.round(oos/total*100)}%` : '—', sub: `${oos.toLocaleString()} orders`, flag:true,
+        active: state.category === 'Out of stock / product unavailable',
+        onClick: () => toggleFilter('category', 'Out of stock / product unavailable'), title: 'Filter to out-of-stock orders' },
+      { label:"Awaiting CJ shipment", value: cj.toLocaleString(), sub: total ? `${Math.round(cj/total*100)}% of view` : '',
+        active: state.supplier === 'CJ', onClick: () => toggleFilter('supplier', 'CJ'), title: 'Filter to CJ' },
+      { label:"Awaiting WIIO shipment", value: wiio.toLocaleString(), sub: total ? `${Math.round(wiio/total*100)}% of view` : '',
+        active: state.supplier === 'WIIO', onClick: () => toggleFilter('supplier', 'WIIO'), title: 'Filter to WIIO' },
+      { label:"Refund / credit issued", value: (refund+credit).toLocaleString(), sub: `${refund} refund · ${credit} store credit`,
+        active: state.refundOrCredit, onClick: () => toggleBoolFilter('refundOrCredit'), title: 'Filter to refund/credit orders' },
+      { label:"Repeat customers", value: repeatCustomers.toLocaleString(), sub: `flagged more than once`,
+        active: state.repeatOnly, onClick: () => toggleBoolFilter('repeatOnly'), title: 'Filter to repeat customers' },
     ];
     const kpiRow = document.getElementById('kpiRow');
     kpiRow.innerHTML = '';
     kpis.forEach(k => {
       const el = document.createElement('div');
-      el.className = 'kpi' + (k.flag ? ' flag' : '');
+      el.className = 'kpi clickable' + (k.flag ? ' flag' : '') + (k.active ? ' cell-active' : '');
+      el.title = k.title || '';
       const lab = document.createElement('div'); lab.className='label'; lab.textContent = k.label;
       const val = document.createElement('div'); val.className='value'; val.textContent = k.value;
       const sub = document.createElement('div'); sub.className='sub'; sub.textContent = k.sub;
       el.append(lab, val, sub);
+      el.addEventListener('click', k.onClick);
       kpiRow.appendChild(el);
     });
 
@@ -984,14 +1019,7 @@
   productFilter.addEventListener('change', () => { state.product = productFilter.value; renderAll(); });
   periodFilter.addEventListener('change', () => { state.period = periodFilter.value; renderAll(); });
 
-  document.getElementById('clearFilters').addEventListener('click', () => {
-    state.q=''; state.category=''; state.store=''; state.supplier=''; state.resolution=''; state.product=''; state.followup=''; state.period=''; state.gran='all';
-    search.value = '';
-    document.querySelectorAll('#granSeg button').forEach(b => b.classList.toggle('active', b.dataset.g === 'all'));
-    populatePeriodOptions();
-    syncControls();
-    renderAll();
-  });
+  document.getElementById('clearFilters').addEventListener('click', clearAllFilters);
 
   const granSeg = document.getElementById('granSeg');
   granSeg.addEventListener('click', (e) => {
